@@ -42,6 +42,7 @@ gemini_client = None
 SECURE_1PSID = os.environ.get("SECURE_1PSID", "")
 SECURE_1PSIDTS = os.environ.get("SECURE_1PSIDTS", "")
 API_KEY = os.environ.get("API_KEY", "")
+ENABLE_THINKING = os.environ.get("ENABLE_THINKING", "false").lower() == "true"
 
 # Print debug info at startup
 if not SECURE_1PSID or not SECURE_1PSIDTS:
@@ -338,7 +339,7 @@ async def create_chat_completion(request: ChatCompletionRequest, api_key: str = 
 		# 提取文本响应
 		reply_text = ""
 		# 提取思考内容
-		if hasattr(response, "thoughts"):
+		if ENABLE_THINKING and hasattr(response, "thoughts"):
 		    reply_text += f"<think>{response.thoughts}</think>"
 		if hasattr(response, "text"):
 			reply_text += response.text
