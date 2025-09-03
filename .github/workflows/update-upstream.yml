@@ -1,0 +1,127 @@
+name: Update Upstream Dependencies
+
+on:
+  schedule:
+    # 每天 UTC 02:00 检查更新 (北京时间上午10点)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      
+    - name: Get current gemini-webapi version
+      id: current_version
+      run: |
+        current_version=$(grep -o 'gemini-webapi>=[0-9]\+\.[0-9]\+\.[0-9]\+' pyproject.toml | sed 's/gemini-webapi>=//')
+        echo "current=$current_version" >> $GITHUB_OUTPUT
+        echo "Current version: $current_version"
+        
+    - name: Check latest upstream release
+      id: latest_version
+      run: |
+        latest_version=$(curl -s "https://api.github.com/repos/HanaokaYuzu/Gemini-API/releases/latest" | python3 -c "import sys, json; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
+        echo "latest=$latest_version" >> $GITHUB_OUTPUT
+        echo "Latest version: $latest_version"
+        
+    - name: Compare versions
+      id: version_check
+      run: |
+        current="${{ steps.current_version.outputs.current }}"
+        latest="${{ steps.latest_version.outputs.latest }}"
+        
+        if [ "$current" != "$latest" ]; then
+          echo "needs_update=true" >> $GITHUB_OUTPUT
+          echo "Version update needed: $current -> $latest"
+        else
+          echo "needs_update=false" >> $GITHUB_OUTPUT
+          echo "Already up to date: $current"
+        fi
+        
+    - name: Update pyproject.toml
+      if: steps.version_check.outputs.needs_update == 'true'
+      run: |
+        current="${{ steps.current_version.outputs.current }}"
+        latest="${{ steps.latest_version.outputs.latest }}"
+        
+        # 更新 pyproject.toml 中的版本号
+        sed -i "s/gemini-webapi>=$current/gemini-webapi>=$latest/g" pyproject.toml
+        
+        echo "Updated gemini-webapi version from $current to $latest"
+        
+    - name: Update lock file
+      if: steps.version_check.outputs.needs_update == 'true'
+      run: |
+        uv lock --upgrade-package gemini-webapi
+        
+    - name: Test installation
+      if: steps.version_check.outputs.needs_update == 'true'
+      run: |
+        uv sync
+        uv run python -c "import gemini_webapi; print(f'gemini-webapi version: {gemini_webapi.__version__}')"
+        
+    - name: Run linting
+      if: steps.version_check.outputs.needs_update == 'true'
+      run: |
+        uv run ruff check .
+        uv run ruff format --check .
+        
+    - name: Create Pull Request
+      if: steps.version_check.outputs.needs_update == 'true'
+      uses: peter-evans/create-pull-request@v6
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: |
+          ✨ feat: 升级上游版本 gemini-webapi 至 v${{ steps.latest_version.outputs.latest }}
+          
+          - 自动更新 gemini-webapi 从 v${{ steps.current_version.outputs.current }} 到 v${{ steps.latest_version.outputs.latest }}
+          - 更新 uv.lock 文件
+          - 验证安装和代码格式
+        title: '⬆️ 自动更新上游依赖: gemini-webapi v${{ steps.latest_version.outputs.latest }}'
+        body: |
+          ## 🔄 自动上游版本更新
+          
+          此 PR 自动更新了上游依赖版本：
+          
+          - **gemini-webapi**: `${{ steps.current_version.outputs.current }}` → `${{ steps.latest_version.outputs.latest }}`
+          - **上游发布页面**: https://github.com/HanaokaYuzu/Gemini-API/releases/tag/v${{ steps.latest_version.outputs.latest }}
+          
+          ### ✅ 自动验证完成
+          
+          - [x] 依赖安装测试通过
+          - [x] 代码格式检查通过
+          - [x] uv.lock 文件已更新
+          
+          ### 📋 手动检查清单
+          
+          在合并此 PR 前，请确认：
+          
+          - [ ] 查看上游更改日志，确认无破坏性变更
+          - [ ] 本地测试 API 功能正常
+          - [ ] 确认新版本兼容现有功能
+          
+          ---
+          
+          🤖 此 PR 由 GitHub Actions 自动生成
+        branch: auto-update/gemini-webapi-v${{ steps.latest_version.outputs.latest }}
+        delete-branch: true
+        draft: false
+        labels: |
+          dependencies
+          enhancement
+          automated
