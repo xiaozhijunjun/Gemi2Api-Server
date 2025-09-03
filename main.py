@@ -1,23 +1,21 @@
 import asyncio
-import json
-from datetime import datetime, timezone
-import os
 import base64
+import json
+import logging
+import os
 import re
 import tempfile
-
-from fastapi import FastAPI, HTTPException, Request, Depends, Header
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import List, Optional, Dict, Any, Union
 import time
 import uuid
-import logging
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Union
 
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from gemini_webapi import GeminiClient, set_log_level
 from gemini_webapi.constants import Model
+from pydantic import BaseModel
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +66,7 @@ def correct_markdown(md_text: str) -> str:
 	"""
 	修正Markdown文本，移除Google搜索链接包装器，并根据显示文本简化目标URL。
 	"""
+
 	def simplify_link_target(text_content: str) -> str:
 		match_colon_num = re.match(r"([^:]+:\d+)", text_content)
 		if match_colon_num:
@@ -85,12 +84,13 @@ def correct_markdown(md_text: str) -> str:
 			return f"{outer_open_paren}{new_link_segment})"
 		else:
 			return new_link_segment
+
 	pattern = r"(\()?\[`([^`]+?)`\]\((https://www.google.com/search\?q=)(.*?)(?<!\\)\)\)*(\))?"
-	
+
 	fixed_google_links = re.sub(pattern, replacer, md_text)
 	# fix wrapped markdownlink
 	pattern = r"`(\[[^\]]+\]\([^\)]+\))`"
-	return re.sub(pattern, r'\1', fixed_google_links)
+	return re.sub(pattern, r"\1", fixed_google_links)
 
 
 # Pydantic models for API requests and responses
@@ -161,17 +161,17 @@ async def verify_api_key(authorization: str = Header(None)):
 
 	if not authorization:
 		raise HTTPException(status_code=401, detail="Missing Authorization header")
-	
+
 	try:
 		scheme, token = authorization.split()
 		if scheme.lower() != "bearer":
 			raise HTTPException(status_code=401, detail="Invalid authentication scheme. Use Bearer token")
-		
+
 		if token != API_KEY:
 			raise HTTPException(status_code=401, detail="Invalid API key")
 	except ValueError:
 		raise HTTPException(status_code=401, detail="Invalid authorization format. Use 'Bearer YOUR_API_KEY'")
-	
+
 	return token
 
 
@@ -340,14 +340,14 @@ async def create_chat_completion(request: ChatCompletionRequest, api_key: str = 
 		reply_text = ""
 		# 提取思考内容
 		if ENABLE_THINKING and hasattr(response, "thoughts"):
-		    reply_text += f"<think>{response.thoughts}</think>"
+			reply_text += f"<think>{response.thoughts}</think>"
 		if hasattr(response, "text"):
 			reply_text += response.text
 		else:
 			reply_text += str(response)
-		reply_text = reply_text.replace("&lt;","<").replace("\\<","<").replace("\\_","_").replace("\\>",">")
+		reply_text = reply_text.replace("&lt;", "<").replace("\\<", "<").replace("\\_", "_").replace("\\>", ">")
 		reply_text = correct_markdown(reply_text)
-		
+
 		logger.info(f"Response: {reply_text}")
 
 		if not reply_text or reply_text.strip() == "":
