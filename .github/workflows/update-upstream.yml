@@ -73,7 +73,7 @@ jobs:
       if: steps.version_check.outputs.needs_update == 'true'
       run: |
         uv sync
-        uv run python -c "import gemini_webapi; print(f'gemini-webapi version: {gemini_webapi.__version__}')"
+        uv run python -c "import gemini_webapi; print('gemini-webapi imported successfully')"
         
     - name: Run linting
       if: steps.version_check.outputs.needs_update == 'true'
